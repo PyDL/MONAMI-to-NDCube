@@ -42,4 +42,5 @@ There are 4 very useful functions in **monami2ndcube.py**:
 2. *construct_wcs*: constructs the wcs coordinate for the NDCubes.
 3. *get_roi*: get the region of interested for performing the potential field extrapolation.
 4. *generate_ndcube*: main program for generating the NDCubes.
+
 More information including the input parameters, returns and usage of the above functions can be found in there corresponding comments in the file **monami2ndcube.py**.
