@@ -11,12 +11,21 @@ Description: Convert the output of potential field extrapolation used in
              and potential field extrapolation result is missing, the
              potential magnetic field extrapolation will be calculated.
 
+Change Log:
+    v1.1: Add support for the NLFFF extrapolation result (2019.12)
+
+Note:
+    2019.12: Unfortunately, NDCube currently does not support ctyes of 
+            'crln-cea', 'crlt-cea' and 'hprz'. Some functions of generated
+            NDCubes from NLFFF cannot work properly. I am now contacting the
+            NDCube guys to fix this
+            (https://github.com/sunpy/ndcube/issues/226)
 """
 __author__ = 'Jiajia Liu'
 __copyright__ = 'Copyright 2019, The Solar Physics and Space Plasma ' + \
                 'Research Center (SP2RC)'
 __license__ = 'GPLv3'
-__version__ = '1.0'
+__version__ = '1.1'
 __maintainor__ = 'Jiajia Liu'
 __email__ = 'jj.liu@sheffield.ac.uk'
 
@@ -60,6 +69,8 @@ def read_data(obs="example.fits.gz", pf="example.sav", header=None):
                     direction
             yrange: pixel range of the region in the original image in y
                     direction
+        if nlfff is True, then xrange and yrange will not be included in the
+        returned dictionary
     """
 
     if header is None:
@@ -71,23 +82,35 @@ def read_data(obs="example.fits.gz", pf="example.sav", header=None):
     # read the IDL save file
     data = readsav(pf)
 
-    # mangetic field
-    bpx = np.array(data['bp'][0][0], dtype=float)
-    bpy = np.array(data['bp'][0][1], dtype=float)
-    bpz = np.array(data['bp'][0][2], dtype=float)
+    if 'bp' in data.keys():
+        # mangetic field
+        bpx = np.array(data['bp'][0][0], dtype=float)
+        bpy = np.array(data['bp'][0][1], dtype=float)
+        bpz = np.array(data['bp'][0][2], dtype=float)
 
-    # zscale
-    zscale = data['bp'][0][3]
+        # zscale
+        zscale = data['bp'][0][3]
 
-    # xrange & yrange
-    xrange = data['xrange']
-    yrange = data['yrange']
+        # xrange & yrange
+        xrange = data['xrange']
+        yrange = data['yrange']
 
-    # construct bp dictionary
-    bp = {"bpx": bpx, "bpy": bpy, "bpz": bpz, "zscale": zscale,
-          "xrange": xrange, "yrange": yrange, "header": header}
+        # construct bp dictionary
+        bp = {"bpx": bpx, "bpy": bpy, "bpz": bpz, "zscale": zscale,
+              "xrange": xrange, "yrange": yrange, "header": header}
 
-    return bp
+        return bp
+
+    else:
+        # mangetic field
+        bnx = np.array(data['bn'][0][0], dtype=float)
+        bny = np.array(data['bn'][0][1], dtype=float)
+        bnz = np.array(data['bn'][0][2], dtype=float)
+
+        # construct bp dictionary
+        bn = {"bnx": bnx, "bny": bny, "bnz": bnz, "header": header}
+
+        return bn
 
 
 def construct_wcs(bp):
@@ -106,42 +129,74 @@ def construct_wcs(bp):
         wcs dictionary which will be used for generating the NDCube
     """
     header = bp["header"]
-    xrange = bp["xrange"]
-    yrange = bp["yrange"]
-    zscale = bp["zscale"]
-    shape = np.shape(bp["bpx"])
-    crval1 = (np.mean(xrange) - header['crpix1']) * header['cdelt1']
-    crval2 = (np.mean(yrange) - header['crpix2']) * header['cdelt2']
-
-    # estimate approximating cdelt3 for z-direction
-    # Only gives precise approximation when the active region is near disk
-    # center. Anyway, the field extrapolation also gives good results only
-    # when the active region is near disk
-    t_obs = header['t_obs'][0:19]
-    t_obs = datetime.strptime(t_obs, '%Y.%m.%d_%H:%M:%S')
-    coord = SkyCoord(header['cdelt1']*u.arcsec, header['cdelt2']*u.arcsec,
-                     frame=frames.Helioprojective, obstime=t_obs)
-    cdelt3 = ((coord.cartesian.z * u.au).to(u.km)).value
-    wcs_dict = {
-        'CTYPE1': 'HPLT-TAN',
-                  'CUNIT1': header['cunit1'],
-                  'CDELT1': header['cdelt1'],
-                  'CRPIX1': shape[2] / 2. - 1,
-                  'NAXIS1': shape[2],
-                  'CRVAL1': crval1,
-        'CTYPE2': 'HPLN-TAN',
-                  'CUNIT2': header['cunit2'],
-                  'CDELT2': header['cdelt2'],
-                  'CRPIX2': shape[1] / 2. - 1,
-                  'NAXIS2': shape[1],
-                  'CRVAL2': crval2,
-        'CTYPE3': 'HPRZ    ',
-                  'CUNIT3': 'km',
-                  'CDELT3': cdelt3 * zscale,
-                  'CRPIX3': 0,
-                  'NAXIS3': shape[0],
-                  'CRVAL3': 0.0
-                      }
+    # for potential field extrapolation
+    if "bpx" in bp.keys():
+        xrange = bp["xrange"]
+        yrange = bp["yrange"]
+        zscale = bp["zscale"]
+        shape = np.shape(bp["bpx"])
+        crval1 = (np.mean(xrange) - header['crpix1']) * header['cdelt1']
+        crval2 = (np.mean(yrange) - header['crpix2']) * header['cdelt2']
+    
+        # estimate approximating cdelt3 for z-direction
+        # Only gives precise approximation when the active region is near disk
+        # center. Anyway, the field extrapolation also gives good results only
+        # when the active region is near disk
+        t_obs = header['t_obs'][0:19]
+        t_obs = datetime.strptime(t_obs, '%Y.%m.%d_%H:%M:%S')
+        coord = SkyCoord(header['cdelt1']*u.arcsec, header['cdelt2']*u.arcsec,
+                         frame=frames.Helioprojective, obstime=t_obs)
+        cdelt3 = ((coord.cartesian.z * u.au).to(u.km)).value
+        wcs_dict = {
+            'CTYPE1': 'HPLN-TAN',
+                      'CUNIT1': header['cunit1'],
+                      'CDELT1': header['cdelt1'],
+                      'CRPIX1': shape[2] / 2. - 1,
+                      'NAXIS1': shape[2],
+                      'CRVAL1': crval1,
+            'CTYPE2': 'HPLT-TAN',
+                      'CUNIT2': header['cunit2'],
+                      'CDELT2': header['cdelt2'],
+                      'CRPIX2': shape[1] / 2. - 1,
+                      'NAXIS2': shape[1],
+                      'CRVAL2': crval2,
+            'CTYPE3': 'HPRZ    ',
+                      'CUNIT3': 'km',
+                      'CDELT3': cdelt3 * zscale,
+                      'CRPIX3': 0,
+                      'NAXIS3': shape[0],
+                      'CRVAL3': 0.0
+                          }
+    # for non-linear force-free field extrapolation
+    else:
+        shape = np.shape(bp["bnx"])
+        # estimate approximating cdelt3 for z-direction
+        t_obs = header['t_obs'][0:19]
+        t_obs = datetime.strptime(t_obs, '%Y.%m.%d_%H:%M:%S')
+        coord = SkyCoord(header['cdelt1']*u.degree, header['cdelt2']*u.degree,
+                         frame='heliographic_carrington', obstime=t_obs)
+        cdelt3 = (coord.cartesian.z.to(u.km)).value
+        # construct wcs dictionary
+        wcs_dict = {
+            'CTYPE1': 'CRLN-CEA',
+                      'CUNIT1': 'deg',
+                      'CDELT1': header['cdelt1'],
+                      'CRPIX1': header['crpix1'],
+                      'NAXIS1': header['naxis1'],
+                      'CRVAL1': header['crval1'],
+            'CTYPE2': 'CRLT-CEA',
+                      'CUNIT2': 'deg',
+                      'CDELT2': header['cdelt2'],
+                      'CRPIX2': header['crpix2'],
+                      'NAXIS2': header['naxis2'],
+                      'CRVAL2': header['crval2'],
+            'CTYPE3': 'HPRZ    ',
+                      'CUNIT3': 'km',
+                      'CDELT3': cdelt3,
+                      'CRPIX3': 0,
+                      'NAXIS3': shape[0],
+                      'CRVAL3': 0.0
+                          }
     input_wcs = wcs.WCS(wcs_dict)
     return input_wcs
 
@@ -217,7 +272,9 @@ def generate_ndcube(obs="example.fits.gz", pf=None, bp=None, input_wcs=None,
     Parameters
     ----------
     obs : `string`
-        file name of the fits file of the observation
+        file name of the fits file of the observation, in the case of
+        non-linear force free field extrapolation, this file must be the
+        Br component of the observation
     pf : `string`
         file name of the field extrapolation result
     bp : `dictionary`
@@ -281,7 +338,7 @@ def generate_ndcube(obs="example.fits.gz", pf=None, bp=None, input_wcs=None,
                 yrange[1] = yrange[1] - 1
             if (xrange[1] - xrange[0]) % 2 == 1:
                 xrange[1] = xrange[1] - 1
-            
+
             # call the potential field extrapolation code
             print('Start to perform the potential field extrapolation...')
             pfe = Magnetic_Field_Extrapolation(
@@ -298,8 +355,19 @@ def generate_ndcube(obs="example.fits.gz", pf=None, bp=None, input_wcs=None,
         input_wcs = construct_wcs(bp)
 
     # create NDCubes
-    bxtube = NDCube(bp['bpx'], input_wcs)
-    bytube = NDCube(bp['bpy'], input_wcs)
-    bztube = NDCube(bp['bpz'], input_wcs)
+    if 'bpx' in bp.keys():
+        metax = {"Description": "Bx magnetic field from MONAMI/PF"}
+        metay = {"Description": "By magnetic field from MONAMI/PF"}
+        metaz = {"Description": "Bz magnetic field from MONAMI/PF"}
+        bxtube = NDCube(bp['bpx'], input_wcs, meta=metax)
+        bytube = NDCube(bp['bpy'], input_wcs, meta=metay)
+        bztube = NDCube(bp['bpz'], input_wcs, meta=metaz)
+    else:
+        metax = {"Description": "Bx magnetic field from MONAMI/NLFFF"}
+        metay = {"Description": "By magnetic field from MONAMI/NLFFF"}
+        metaz = {"Description": "Bz magnetic field from MONAMI/NLFFF"}
+        bxtube = NDCube(bp['bnx'], input_wcs, meta=metax)
+        bytube = NDCube(bp['bny'], input_wcs, meta=metay)
+        bztube = NDCube(bp['bnz'], input_wcs, meta=metaz)
 
     return (bxtube, bytube, bztube)
