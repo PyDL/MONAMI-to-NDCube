@@ -5,7 +5,7 @@ This is a Python package which will allow you to convert the output of MONAMI (h
 * v1.1: Add support for the NLFFF extrapolation result (2019.12).
 
 ## Note:
-* 2019.12: Unfortunately, NDCube currently does not support ctyes of  'crln-cea', 'crlt-cea' and 'hprz'. Some functions of generated NDCubes from NLFFF cannot work properly. I am now contacting the NDCube guys to fix this (https://github.com/sunpy/ndcube/issues/226).
+* 2019.12: NDCube currently does not support ctyes of  'crln-cea', 'crlt-cea' and 'hprz'. Warning messages will be shown when using some functions of the NDCube. I am now contacting the NDCube team to fix this (https://github.com/sunpy/ndcube/issues/226).
 
 ## System Requirements
 ### OS Requirements
